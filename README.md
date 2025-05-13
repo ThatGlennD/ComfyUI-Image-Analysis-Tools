@@ -208,3 +208,19 @@ Generates a histogram of RGB channel intensities.
 * Histogram image (256 bins/channel)
 * X: normalized intensity (0–1)
 * Y: pixel count or frequency
+
+
+## Installation
+
+To install the **ComfyUI Image Analysis Toolkit**, follow these steps:
+
+### 1. Clone or Download
+
+If not already cloned:
+
+```bash
+cd /path/to/ComfyUI/custom_nodes
+git clone git@github.com:ThatGlennD/ComfyUI-Image-Analysis-Tools.git
+
+cd ComfyUI-Image-Analysis-Tools
+pip install -r requirements.txt
