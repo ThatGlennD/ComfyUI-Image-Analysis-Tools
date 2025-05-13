@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# MacOS system files
+.DS_Store
+
+# Windows system files
+Thumbs.db
+
+# VS Code settings
+.vscode/
+
+# Temporary files and logs
+*.tmp
+*.log
+*.bak
+
+# Environment variables and secrets
+.env
+*.env
+
+# Virtual environments
+venv/
+.venv/
+
+# Matplotlib or node-generated image outputs
+*.png
+*.svg
+
+# Editor swap and backup files
+*.swp
+*.swo
+*.sb-*
+*~ 
