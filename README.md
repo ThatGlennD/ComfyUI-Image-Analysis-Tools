@@ -28,190 +28,555 @@ Each node focuses on a specific dimension of image quality and returns interpret
 
 ---
 
-### Sharpness / Focus Score
+## 🔍 Sharpness / Focus Score
 
-The Sharpness / Focus Score node measures the clarity of detail in an image using edge-based mathematical techniques. It helps detect soft or out-of-focus results that often arise from low step counts, diffusion noise, or poor prompt adherence.
+The **Sharpness / Focus Score** node measures the clarity of detail in an image using edge-based mathematical techniques. It helps detect soft or out-of-focus results that often arise from low step counts, diffusion noise, or poor prompt adherence.
 
 This node supports three analysis methods, each based on a different algorithm for detecting image focus:
 
-1. **Laplacian**
+### 1. Laplacian
 
-   * Applies the Laplacian operator (second derivative) to detect rapid intensity changes.
-   * Measures the variance of the Laplacian response.
-   * Higher variance = more fine detail and crisper edges.
+- **What it does**: Applies the Laplacian operator (second derivative) to detect rapid intensity changes.
+- **What it measures**: The variance of the Laplacian response.
+- **Interpretation**: Higher variance = more fine detail and crisper edges. A low score often signals blur or softness.
 
-2. **Tenengrad**
+### 2. Tenengrad
 
-   * Computes the gradient magnitude using the Sobel operator.
-   * Sums squared gradient magnitudes over the image.
-   * Strong gradients suggest sharper edges.
+- **What it does**: Computes the gradient magnitude of each pixel using the Sobel operator.
+- **What it measures**: The sum of squared gradient magnitudes over the image.
+- **Interpretation**: Strong gradients suggest sharp edges. Higher scores mean better-defined edges and focus.
 
-3. **Hybrid**
+### 3. Hybrid
 
-   * Averages normalized Laplacian and Tenengrad scores.
-   * Combines intensity variance and edge gradient strength.
+- **What it does**: Averages the normalized scores from both Laplacian and Tenengrad methods.
+- **What it measures**: A balanced estimate that incorporates both intensity variance and edge gradient strength.
+- **Interpretation**: Useful for general-purpose scoring when no single method dominates.
 
-**Outputs**
+### 📊 Output
 
-* Sharpness score (higher = sharper)
-* Grayscale edge map (optional)
+Each method produces:
 
----
+- A numerical focus score (higher is better)
+- Optionally, a grayscale preview of the edge map or response surface for visual inspection
 
-### Blur Detection
+### ✅ Use Cases
 
-Identifies blur by analyzing edge strength across blocks using localized Laplacian variance.
+This node is ideal for:
 
-**Block Size:** 8 to 128 pixels
+- Building automated filters to reject soft outputs
+- Manually reviewing render quality in a controlled pipeline
 
-* Smaller: More precise, slower
-* Larger: Faster, less detailed
 
-**Outputs**
 
-* Blur score (0 to 1)
-* Optional binary or heatmap blur map
 
----
+## 🌀 Blur Detection
 
-### Noise Estimation
+The **Blur Detection** node identifies whether an image appears blurred by analyzing how edge strength varies across localized regions. It helps catch images that lack visual sharpness—even when global sharpness metrics might pass.
 
-Analyzes visual noise by comparing original and blurred versions of an image.
+### 🔧 How It Works
 
-**Block Size:** 8 to 128 pixels (default: 32)
+This node uses a localized variance of the **Laplacian method**:
 
-**Outputs**
+- The image is divided into small square blocks.
+- Each block is independently evaluated for sharpness using the Laplacian operator.
+- The final blur score is calculated from the ratio of low-variance (blurry) blocks to the total number of blocks.
 
-* Noise score (float, higher = more noise)
-* Optional noise heatmap
+### 🧱 Block Size
 
----
+- **Definition**: The width and height (in pixels) of the square region used for each local blur test.
+- **Range**: 8 to 128 pixels (commonly set between 16 and 64)
 
-### Contrast Analysis
+**Smaller block sizes:**
 
-Calculates image contrast using:
+- Provide more detailed, localized blur detection.
+- Better at identifying soft spots in specific regions like eyes or faces.
+- More computationally intensive.
 
-* Global, local, or hybrid scope
-* Michelson, RMS, or Weber formulae
+**Larger block sizes:**
 
-**Block Size:** 8 to 128 pixels
+- Faster and more efficient.
+- Best for detecting uniform global blur.
+- May overlook smaller blurry areas.
 
-**Contrast Map:** Optional heatmap with left-side colorbar
+### 📊 Output
 
-**Outputs**
+- **Blur Score**: A value between 0 and 1 indicating the proportion of blurry blocks. Lower scores mean the image is sharper.
+- **Optional Blur Map**: A binary or heatmap-style visualization showing which areas were classified as blurry.
 
-* Contrast score (float)
-* Visual contrast map (optional)
+### ✅ Use Cases
 
----
+- Flagging subtle rendering errors like soft eyes or motion blur.
+- Comparing results across different models or CFG values.
+- Filtering outputs in high-precision workflows.
 
-### Entropy Analysis
 
-Measures complexity using Shannon entropy in blocks (8-128 px).
 
-**Entropy Map:** Optional heatmap showing detail variation
 
-**Outputs**
+## 🎛 Noise Estimation
 
-* Entropy score (0-8 bits)
-* Interpretation string (e.g., "High entropy (6.2 bits)")
-* Optional entropy heatmap
+The **Noise Estimation** node evaluates how much visual noise is present in an image—useful for diagnosing under-denoised outputs, texture artifacts, or instability in generation.
 
----
+### 🔧 How It Works
 
-### Color Cast Detector
+The node analyzes local pixel variation to estimate noise:
 
-Detects RGB imbalance via:
+- A smoothing filter (e.g., Gaussian blur) is applied to the image.
+- The difference between the original and smoothed image reveals residual noise.
+- This difference is measured across blocks to produce a localized noise map and a global noise score.
 
-1. Channel difference
-2. Neutrality deviation
+### 🧱 Block Size
 
-**Tolerance:** 0.01–0.2 (default: 0.05)
+- **Definition**: The width and height (in pixels) of the square regions used for localized noise measurement.
+- **Range**: 8 to 128 pixels (typical default: 32)
 
-**Outputs**
+**Smaller block sizes:**
 
-* Cast score
-* Optional bias map
-* Interpretation string
+- Capture fine-grained noise patterns (e.g., skin texture or background grain)
+- More sensitive and computationally intensive
 
----
+**Larger block sizes:**
 
-### Color Temperature Estimator
+- Capture broader noise structure (e.g., banding or sky gradients)
+- Faster, but may smooth over small details
 
-Estimates white point using Robertson approximation.
+### 📊 Output
 
-**Outputs**
+- **Noise Score**: A floating-point value indicating average residual noise across all blocks. *(Higher = more noise)*
+- **Noise Heatmap** (optional): A visual map showing which regions are noisiest, useful for debugging texture issues or denoising artifacts
 
-* Kelvin value (e.g., 6643)
-* Label (Warm, Neutral, etc.)
-* Color swatch with overlaid label
+### ✅ Use Cases
 
----
+- Identifying insufficiently denoised outputs
+- Debugging compression artifacts in post-processing
+- Comparing render quality across samplers or checkpoints
 
-### Clipping Analysis
 
-Detects visual loss from:
 
-1. Highlight/Shadow clipping
-2. Saturation clipping
 
-**Threshold:** 1–50 (default: 5)
+## 🌓 Contrast Analysis
 
-**Outputs**
+The **Contrast Analysis** node evaluates how well an image utilizes tonal variation—both across the whole image and within localized regions. It supports both structural and perceptual measurements and allows you to choose the mathematical method used to calculate contrast.
 
-* Clipping score (float %)
-* Clipping map (optional)
-* Interpretation string
+This node is essential for identifying low-contrast renders, flat compositions, or overly compressed tone curves.
 
----
 
-### Edge Density Analysis
+### 🔧 How It Works
 
-Detects image edges via Canny or Sobel filters.
+Contrast is calculated using two dimensions of control:
 
-**Block Size:** 8–128 px
+1. **Scope (method):**
+   - **Global**: Measures contrast across the entire image.
+   - **Local**: Divides the image into blocks and evaluates contrast in each region.
+   - **Hybrid**: Averages both global and local scores for a balanced result.
 
-**Outputs**
+2. **Formula (comparison_method):**
+   - **Michelson**:
+     - **Formula**: (I_max - I_min) / (I_max + I_min)
+     - Sensitive to strong contrast in high-intensity areas
+     - Best for bold lighting differences
+   - **RMS (Root Mean Square)**:
+     - **Formula**: Standard deviation of intensity values
+     - Captures general tonal variance
+     - Ideal for natural gradients and soft lighting
+   - **Weber**:
+     - **Formula**: (I_max - I_mean) / I_mean
+     - Measures contrast relative to background intensity
+     - Particularly good for detecting low-light local contrast
 
-* Edge density score (0–1)
-* Edge map heatmap
-* Raw edge preview
-* Interpretation string
+These combinations let you customize the node for both photographic realism and stylized output assessment.
 
----
 
-### Color Harmony Analyzer
+### 🧱 Block Size
 
-Uses K-means clustering to detect dominant hues and compares against harmony models:
+- **Definition**: Size (in pixels) of each square region used for local analysis.
+- **Range**: 8 to 128 (default: 32)
 
-* Complementary
-* Analogous
-* Triadic
-* Split-Complementary
-* Tetradic
-* Square
+**Smaller blocks:**
+- Detect fine contrast variation
 
-**Outputs**
+**Larger blocks:**
+- Evaluate broader tonal patterns
 
-* Harmony score (0.0–1.0)
-* Harmony type
-* Optional hue wheel
 
----
+### 🎨 Contrast Map
 
-### RGB Histogram Renderer
+- **Option**: `visualize_contrast_map: true`
+- Produces a color-coded heatmap showing localized contrast strength per block
+  - **Bright** = high contrast
+  - **Dark** = low contrast
+- Includes a vertical colorbar on the left for interpretation
 
-Generates a histogram of RGB channel intensities.
 
-**Outputs**
+### 📊 Output
 
-* Histogram image (256 bins/channel)
-* X: normalized intensity (0–1)
-* Y: pixel count or frequency
+- **Contrast Score**: A float representing overall contrast strength
+- **Contrast Map**: A visual heatmap (if enabled) for manual review
+
+
+### 📌 Use Cases
+
+- Detecting flat, lifeless renders before upscaling or compositing
+- Comparing contrast quality across samplers or models
+- Tuning CFG or LoRA lighting behavior
+- Building pipelines to reject visually dull outputs
+
+
+
+## 📈 Entropy Analysis
+
+The **Entropy Analysis** node measures the informational complexity of an image by calculating the **Shannon entropy** of pixel intensity values. This is useful for assessing how much structured detail, randomness, or texture is present in an image.
+
+Low-entropy images tend to be flat, repetitive, or overly compressed. High-entropy images are rich in visual variation and structure.
+
+
+### 🔧 How It Works
+
+- The image is converted to grayscale or intensity format.
+- It’s divided into blocks, and the entropy of each block is calculated based on pixel value distributions.
+- A global entropy score is produced by averaging the block-level values.
+
+Entropy is measured in bits, with a maximum of 8 bits for 8-bit images.
+
+
+### 🧱 Block Size
+
+- **Definition**: The pixel size of each square block for local entropy calculation
+- **Range**: 8 to 128 pixels (default: 32)
+
+**Smaller blocks:**
+- Detect fine texture and detail variation
+
+**Larger blocks:**
+- Reflect broader complexity patterns
+
+### 🎨 Entropy Map
+
+- **Option**: `visualize_entropy_map: true`
+- Produces a color-coded heatmap showing local entropy values
+  - **Bright areas** = more complexity/detail
+  - **Dark areas** = repetitive or low-information zones
+
+
+### 📊 Output
+
+- **Entropy Score**: Average entropy across all blocks (0–8 bits)
+- **Interpretation String**: A human-readable label like `"Low entropy (3.70 bits)"`, designed for display or filtering
+- **Entropy Map**: Optional heatmap visualization when `visualize_entropy_map` is enabled
+
+
+### ✅ Use Cases
+
+- Evaluating how much usable detail is present in an image
+- Flagging low-effort or overly denoised outputs
+- Comparing rendering richness across prompts, models, or samplers
+
+
+
+
+## 🎨 Color Cast Detector
+
+The **Color Cast Detector** identifies imbalances in the red, green, and blue channels that result in unwanted color shifts—commonly known as *color casts*. This is particularly useful when assessing lighting realism, skin tones, or unintended tints in backgrounds and shadows.
+
+
+### 🔧 How It Works
+
+The node analyzes RGB channel balance across the image to detect shifts away from neutral color. It supports two visualization modes:
+
+1. **Channel Difference**
+   - Calculates the difference between each color channel pair (e.g., R–G, G–B)
+   - Useful for identifying dominant tints caused by uneven channel amplification
+
+2. **Neutrality Deviation**
+   - Measures how far each pixel deviates from ideal gray/white balance
+   - Ideal for detecting global color bias, especially in highlights and midtones
+
+
+### 🎚 Tolerance
+
+- **Definition**: A threshold for how much channel imbalance is allowed before it’s flagged as a cast
+- **Range**: Typically 0.01 to 0.2 (default: 0.05)
+
+**Lower values** = more sensitive  
+**Higher values** = more forgiving
+
+
+### 🎨 Color Bias Visualization
+
+- **Toggle**: `visualize_color_bias: true`
+- When enabled, outputs a color-coded map highlighting areas affected by a dominant color cast
+- Green/magenta/purple overlays often indicate dominant RGB shifts
+- The intensity reflects the degree of imbalance
+
+
+### 📊 Output
+
+- **Cast Score**: A numerical score reflecting average color imbalance across the image
+- **Color Bias Map**: A visual representation of channel imbalance
+- **Interpretation String**: A short summary like `"No significant color cast"` or `"Strong magenta-green cast"`, suitable for display or filtering
+
+
+### ✅ Use Cases
+
+- Validating color balance in photorealistic renders
+- Detecting HDR or white balance shifts
+- Flagging outputs affected by tints from lighting, LoRAs, or compositing
+
+
+
+
+## 🌡 Color Temperature Estimator
+
+The **Color Temperature Estimator** node calculates the average white point of an image and expresses it as a **Kelvin temperature**—a standard measurement of color warmth or coolness in photography and cinematography.
+
+This tool is ideal for evaluating lighting accuracy, post-processing tone shifts, and stylistic consistency across renders.
+
+
+### 🔧 How It Works
+
+- The image’s average RGB value is converted to the **CIE 1931 XYZ** color space
+- From XYZ, it’s mapped to chromaticity coordinates *(x, y)*
+- A polynomial model estimates the **correlated color temperature (CCT)** in degrees Kelvin
+
+This method is based on the **Robertson approximation**, providing realistic and interpretable results.
+
+
+### 📊 Output
+
+- **Kelvin**: A rounded integer value (e.g., `6643`) representing the image's overall color temperature
+- **Temperature Label**: A descriptor based on the Kelvin value:
+  - `"Warm"` (< 3000K)
+  - `"Neutral"` (3000–4500K)
+  - `"Cool Daylight"` (4500–6500K)
+  - `"Blueish / Overcast"` (> 6500K)
+- **Color Swatch**:
+  - A solid fill representing the computed average white point
+  - Includes a readable overlay label (e.g., `6643K`), rendered in black or white for legibility
+
+
+### 🎨 Usage
+
+- Compare lighting tone across renders or generations
+- Detect overcool or overwarm color drift
+- Track consistency when applying LUTs, LoRAs, or stylistic filters
+
+
+This node provides a quick, readable snapshot of an image’s **emotional color tone**—quantified, visualized, and ready for inspection or filtering in automated workflows.
+
+
+
+## ⚠️ Clipping Analysis
+
+The **Clipping Analysis** node detects whether parts of an image have lost visual detail due to **tonal or color clipping**—typically from overexposure, underexposure, or extreme saturation. It identifies problematic areas where pixel values are pushed too close to black, white, or the limits of the color spectrum, resulting in a loss of gradation.
+
+
+### 🔧 How It Works
+
+The node offers two detection modes:
+
+1. **Highlight/Shadow Clipping**
+   - Converts the image to grayscale
+   - Flags pixels that fall below a minimum brightness (shadows) or exceed a maximum brightness (highlights), based on a defined threshold
+   - Helps detect crushed shadows or blown-out highlights
+
+2. **Saturation Clipping**
+   - Converts the image to HSV color space
+   - Flags pixels where both saturation and brightness are too close to 255 (fully saturated and bright), indicating potential color flattening or burnout
+   - Useful for spotting oversaturated render artifacts or posterized color areas
+
+
+### 🎚 Threshold
+
+- **Definition**: Number of intensity levels near black, white, or full saturation that should be treated as clipped
+- **Range**: 1 to 50 (default: 5)
+
+**Usage:**
+
+- In **Highlight/Shadow** mode:
+  - Pixels ≤ threshold → counted as shadows
+  - Pixels ≥ 255 - threshold → counted as highlights
+- In **Saturation** mode:
+  - Pixels are clipped if both saturation and value ≥ 255 - threshold
+
+**Lower threshold** = more strict (flags only extreme values)  
+**Higher threshold** = more lenient (includes near-clipping values)
+
+
+### 🎨 Clipping Map
+
+- **Toggle**: `visualize_clipping_map: true`
+- Outputs a color-coded map that highlights where clipping occurs:
+  - In Highlight/Shadow mode: shadows and highlights may be shown in distinct colors
+  - In Saturation mode: clipped zones appear wherever saturation is excessive
+
+
+### 📊 Output
+
+- **Clipping Score**: The percentage of the image that is clipped, represented as a float (e.g., `0.0033` = 0.33%)
+- **Clipping Map**: Optional visualization of clipped regions
+- **Interpretation String**: A short summary like `"Clipped highlights/shadows: 0.33%"`
+
+
+### 📌 Use Cases
+
+- Detecting tonal damage from extreme lighting or contrast settings
+- Validating image safety for print or color grading workflows
+- Filtering renders before enhancement or compositing
+
+
+
+
+## 🧩 Edge Density Analysis
+
+The **Edge Density Analysis** node measures how much structural detail is present in an image by detecting and quantifying edges. It’s particularly useful for evaluating texture sharpness, surface complexity, or the overall “visual energy” of a composition.
+
+Images with high edge density tend to feel more detailed and busy, while low-density images are perceived as soft, minimal, or stylized.
+
+
+### 🔧 How It Works
+
+- The image is passed through an edge detection filter
+- The result is converted into a binary or intensity-based edge map
+- The percentage of edge pixels is measured per block and averaged to produce a global edge density score
+
+You can choose between two edge detection methods:
+
+1. **Canny**
+   - A multi-stage detector with thresholding and non-maximum suppression
+   - Detects clean, well-defined edges
+   - Less sensitive to minor noise
+
+2. **Sobel**
+   - Computes the image gradient using horizontal and vertical filters
+   - Captures both strong and soft transitions
+   - Good for detecting overall structure and subtle detail
+
+
+### 🧱 Block Size
+
+- **Definition**: The size of square blocks used to compute local edge density
+- **Range**: 8 to 128 pixels (default: 32)
+
+**Smaller block sizes:**
+- Reveal fine detail patterns
+- Useful for faces, textures, and fabrics
+
+**Larger block sizes:**
+- Capture macro-level structure
+- Better for architectural or landscape evaluation
+
+
+### 🎨 Edge Visualization
+
+- **Toggle**: `visualize_edge_map: true`
+- Enables a color-coded density heatmap showing where edge detail is concentrated
+  - **Brighter areas** = more edge activity
+  - **Darker areas** = smooth or flat regions
+- **Edge Preview**: A second output image showing the raw edges detected before density mapping—useful for debugging or understanding how the edge map was derived
+
+
+### 📊 Output
+
+- **Edge Density Score**: A float between 0 and 1 indicating the proportion of detected edges *(higher = more detailed)*
+- **Edge Density Map**: A visual heatmap showing per-block edge strength
+- **Edge Preview**: A raw binary/intensity edge detection output (Canny or Sobel)
+- **Interpretation String**: A short label like `"Very smooth (0.02)"` or `"Moderate detail (0.26)"` for quick diagnostics
+
+
+### 📌 Use Cases
+
+- Measuring image texture and structure
+- Flagging overly smooth or detail-poor renders
+- Comparing edge complexity across styles or samplers
+- Building filters to select for realism, minimalism, or abstraction
+
+
+
+## 🎨 Color Harmony Analyzer
+
+The **Color Harmony Analyzer** evaluates the relationships between dominant hues in an image and classifies their alignment according to classical color theory. It quantifies the visual coherence of the image’s palette and identifies whether the colors form a known harmony type, such as **complementary** or **triadic**.
+
+This is particularly useful for evaluating visual aesthetics, cinematic balance, or color grading consistency.
+
+### 🔧 How It Works
+
+- The image is analyzed to extract dominant hues using **K-means clustering**
+- The hue relationships between clusters are compared against standard harmony models
+- A match is scored and classified by type, and optionally visualized on a **polar hue wheel**
+
+
+### ⚙️ Parameters
+
+- `num_clusters`: Number of hue clusters to extract from the image  
+  - **Default**: 3  
+  - More clusters = finer-grained palette analysis
+
+- `visualize_harmony`: Toggles generation of a **color wheel preview** showing detected hue positions and their alignment pattern
+
+
+### 🌀 Supported Harmony Types
+
+The analyzer evaluates the hue structure against the following color harmony models:
+
+- **Complementary**: Opposites on the color wheel (e.g., blue and orange)
+- **Analogous**: Neighboring hues (e.g., red, orange, yellow)
+- **Triadic**: Three hues spaced evenly around the wheel (e.g., red, yellow, blue)
+- **Split-Complementary**: A base color and two adjacent to its complement
+- **Tetradic**: Two complementary pairs forming a rectangle
+- **Square**: Four evenly spaced hues around the wheel
+
+
+### 📊 Output
+
+- **Harmony Score**: A float from `0.0` to `1.0` representing how closely the palette matches a known harmony model
+- **Harmony Type**: A label identifying the best-matching harmony (e.g., `"Split-Complementary"`)
+- **Hue Wheel Visual** *(optional)*:
+  - Detected hue clusters shown as points
+  - Overlaid lines or arcs indicating the identified harmony pattern
+  - Wheel orientation aligned to classical 0–360° hue angles
+
+
+### 📌 Use Cases
+
+- Evaluating color composition for style or storytelling
+- Validating color consistency across frames or outputs
+- Building filters to flag off-tone or disharmonious images
+- Training models for stylization with defined palette structures
+
+
+## 📊 RGB Histogram Renderer
+
+The **RGB Histogram Renderer** visualizes the distribution of pixel intensities across the **Red**, **Green**, and **Blue** channels in an image. It’s a foundational diagnostic tool that reveals how tones and colors are distributed—helpful for identifying imbalance, dynamic range compression, or color clipping.
+
+
+### 🔧 How It Works
+
+- The image is split into its three RGB channels
+- Each channel is processed to calculate the frequency of pixel intensities, typically across **256 bins**
+- A combined histogram is rendered using **matplotlib**, with overlapping bar graphs for red, green, and blue
+
+This creates a visual fingerprint of the image’s **tonal and chromatic structure**
+
+
+### 📊 Output
+
+- **Histogram Image**: A cleanly labeled plot showing:
+  - Red, green, and blue channel curves or bars
+  - **Horizontal axis**: normalized intensity (`0.0` to `1.0`)
+  - **Vertical axis**: pixel count or relative frequency
+
+The image is output as a **standard tensor**, suitable for previewing or saving
+
+
+### 📌 Use Cases
+
+- Diagnosing channel imbalance, especially in highlights or shadows
+- Detecting clipped blacks, whites, or saturated colors
+- Comparing images for consistency in color grading or lighting
+- Pairing with other analysis nodes like **Contrast** or **Clipping** for comprehensive tonal evaluation
+
 
 
 ## Installation
-
 To install the **ComfyUI Image Analysis Toolkit**, follow these steps:
 
 ### 1. Clone or Download
@@ -224,3 +589,5 @@ git clone git@github.com:ThatGlennD/ComfyUI-Image-Analysis-Tools.git
 
 cd ComfyUI-Image-Analysis-Tools
 pip install -r requirements.txt
+
+Then restart ComfyUI.
