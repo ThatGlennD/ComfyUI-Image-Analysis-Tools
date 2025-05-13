@@ -12,3 +12,7 @@ Repository = "https://github.com/ThatGlennD/ComfyUI-Image-Analysis-Tools"
 PublisherId = "verevolf"
 DisplayName = "ComfyUI-Image-Analysis-Tools"
 Icon = ""
+
+[comfy_node]
+display_name = "ComfyUI Image Analysis Toolkit"
+description = "Custom ComfyUI nodes for evaluating image quality via sharpness, noise, contrast, entropy, and more."
