@@ -29,7 +29,6 @@ venv/
 .venv/
 
 # Matplotlib or node-generated image outputs
-*.png
 *.svg
 
 # Editor swap and backup files

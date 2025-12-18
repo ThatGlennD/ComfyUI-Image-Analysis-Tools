@@ -2,22 +2,29 @@ import numpy as np
 import cv2
 import torch
 import matplotlib.pyplot as plt
-import tempfile
 import os
-import comfy.io as io
+import io as py_io
+from comfy_api.latest import io
 
 class ColorTemperatureEstimator(io.ComfyNode):
     @classmethod
-    def define_schema(cls):
-        return io.Schema({"image": io.Image.Input()})
-
-    RETURN_TYPES = ("INT", "STRING", "IMAGE")
-    RETURN_NAMES = ("kelvin", "temperature_label", "color_swatch")
-    FUNCTION = "execute"
-    CATEGORY = "Image Analysis/Color"
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="Color Temperature Estimator",
+            display_name="Color Temperature Estimator",
+            category="Image Analysis/Color",
+            inputs=[
+                io.Image.Input("image"),
+            ],
+            outputs=[
+                io.Int.Output("kelvin"),
+                io.String.Output("temperature_label"),
+                io.Image.Output("color_swatch"),
+            ]
+        )
 
     @classmethod
-    def execute(cls, image):
+    def execute(cls, image) -> io.NodeOutput:
         img = image[0]
 
         # Normalize ComfyUI inputs to H×W×C float32 [0–1]
@@ -35,7 +42,7 @@ class ColorTemperatureEstimator(io.ComfyNode):
         img_uint8 = (arr * 255).astype(np.uint8)
 
         # Compute color temperature
-        kelvin, label, avg_rgb = cls()._estimate_color_temperature(img_uint8)
+        kelvin, label, avg_rgb = cls._estimate_color_temperature(img_uint8)
 
         # — Build a 64×128 swatch via Matplotlib and save/load just like your working nodes —
         # Prepare figure matching your other nodes' pattern
@@ -47,19 +54,20 @@ class ColorTemperatureEstimator(io.ComfyNode):
         text_color = "black" if avg_rgb.sum() > 1.5 else "white"
         ax.text(0.02, 0.6, f"{kelvin}K", color=text_color, fontsize=12, transform=ax.transAxes)
 
-        # Save to temporary file, read back, convert to torch tensor
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
-            plt.savefig(tmpfile.name, bbox_inches="tight", pad_inches=0)
-            plt.close(fig)
-            tmp_path = tmpfile.name
-        img_bgr = cv2.imread(tmp_path)
+        # Save to buffer, read back, convert to torch tensor
+        buf = py_io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches="tight", pad_inches=0)
+        plt.close(fig)
+        buf.seek(0)
+        img_array = np.frombuffer(buf.getvalue(), dtype=np.uint8)
+        img_bgr = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-        os.unlink(tmp_path)
         swatch_tensor = torch.from_numpy(img_rgb.astype(np.float32) / 255.0).unsqueeze(0)
 
-        return kelvin, label, swatch_tensor
+        return io.NodeOutput(kelvin, label, swatch_tensor)
 
-    def _estimate_color_temperature(self, img_uint8):
+    @staticmethod
+    def _estimate_color_temperature(img_uint8):
         img_f = img_uint8.astype(np.float32) / 255.0
         avg = img_f.mean(axis=(0,1)).flatten()[:3]
         r, g, b = avg

@@ -1,23 +1,29 @@
 import numpy as np
 import cv2
 import torch
-import comfy.io as io
+from comfy_api.latest import io
 
 class SharpnessFocusScore(io.ComfyNode):
     @classmethod
-    def define_schema(cls):
-        return io.Schema({
-            "image": io.Image.Input(),
-            "method": io.Enum.Input(["Laplacian", "Tenengrad", "Hybrid"], default="Hybrid"),
-            "visualize_edges": io.Boolean.Input(default=False),
-        })
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="Sharpness / Focus Score",
+            display_name="Sharpness / Focus Score",
+            category="Image Analysis",
+            inputs=[
+                io.Image.Input("image"),
+                io.Enum.Input("method", ["Laplacian", "Tenengrad", "Hybrid"], default="Hybrid"),
+                io.Boolean.Input("visualize_edges", default=False),
+            ],
+            outputs=[
+                io.Float.Output("sharpness_score"),
+                io.Image.Output("edge_visualization"),
+                io.String.Output("interpretation"),
+            ]
+        )
 
-    RETURN_TYPES = ("FLOAT", "IMAGE", "STRING")
-    RETURN_NAMES = ("sharpness_score", "edge_visualization", "interpretation")
-    FUNCTION = "execute"
-    CATEGORY = "Image Analysis"
-
-    def interpret_score(self, score, method):
+    @staticmethod
+    def interpret_score(score, method):
         if method == "Laplacian":
             if score < 100:
                 desc = "Very blurry"
@@ -85,7 +91,7 @@ class SharpnessFocusScore(io.ComfyNode):
             mag = np.sqrt(gx ** 2 + gy ** 2)
             ten_score = np.mean(mag ** 2)
 
-            instance = cls()
+            # Use static methods directly to avoid immutability issues with cls() instantiation
 
             if method == "Laplacian":
                 score = lap_score
@@ -109,10 +115,10 @@ class SharpnessFocusScore(io.ComfyNode):
             else:
                 edge_tensor = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
 
-            interpretation = instance.interpret_score(score, method)
-            return float(score), edge_tensor, interpretation
+            interpretation = cls.interpret_score(score, method)
+            return io.NodeOutput(float(score), edge_tensor, interpretation)
 
         except Exception as e:
             print(f"[SharpnessFocusScore] Error: {e}")
             fallback = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-            return 0.0, fallback, "Error during processing"
+            return io.NodeOutput(0.0, fallback, "Error during processing")

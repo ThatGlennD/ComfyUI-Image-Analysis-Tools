@@ -2,25 +2,31 @@ import numpy as np
 import cv2
 import torch
 import matplotlib.pyplot as plt
-import tempfile
 import os
-import comfy.io as io
+import io as py_io
+from comfy_api.latest import io
 
 class BlurDetection(io.ComfyNode):
     @classmethod
-    def define_schema(cls):
-        return io.Schema({
-            "image": io.Image.Input(),
-            "block_size": io.Int.Input(default=32, min=8, max=128, step=8),
-            "visualize_blur_map": io.Boolean.Input(default=True)
-        })
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="Blur Detection",
+            display_name="Blur Detection",
+            category="Image Analysis",
+            inputs=[
+                io.Image.Input("image"),
+                io.Int.Input("block_size", default=32, min=8, max=128),
+                io.Boolean.Input("visualize_blur_map", default=True)
+            ],
+            outputs=[
+                io.Float.Output("blur_score"),
+                io.Image.Output("blur_map"),
+                io.String.Output("interpretation")
+            ]
+        )
 
-    RETURN_TYPES = ("FLOAT", "IMAGE", "STRING")
-    RETURN_NAMES = ("blur_score", "blur_map", "interpretation")
-    FUNCTION = "execute"
-    CATEGORY = "Image Analysis"
-
-    def interpret_blur(self, score):
+    @staticmethod
+    def interpret_blur(score):
         if score < 50:
             return f"Very blurry ({score:.1f})"
         elif score < 150:
@@ -67,7 +73,7 @@ class BlurDetection(io.ComfyNode):
             # Use instance method? execute is classmethod in V3 guideline,
             # so we must create instance or make helper static.
             # However, the interpret_blur method doesn't use self state.
-            interpretation = cls().interpret_blur(global_score)
+            interpretation = cls.interpret_blur(global_score)
 
             if visualize_blur_map:
                 vis_up = cv2.resize(blur_map, (w, h), interpolation=cv2.INTER_NEAREST)
@@ -83,22 +89,21 @@ class BlurDetection(io.ComfyNode):
                 cbar.ax.yaxis.set_label_position("left")
                 cbar.ax.yaxis.set_ticks_position("left")
 
-                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
-                    plt.savefig(tmpfile.name, bbox_inches='tight', dpi=150)
-                    plt.close(fig)
-                    temp_path = tmpfile.name
-
-                blur_img = cv2.imread(temp_path)
+                buf = py_io.BytesIO()
+                plt.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+                plt.close(fig)
+                buf.seek(0)
+                img_array = np.frombuffer(buf.getvalue(), dtype=np.uint8)
+                blur_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
                 blur_rgb = cv2.cvtColor(blur_img, cv2.COLOR_BGR2RGB)
-                os.unlink(temp_path)
 
                 blur_tensor = torch.from_numpy(blur_rgb.astype(np.float32) / 255.0).unsqueeze(0)
             else:
                 blur_tensor = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
 
-            return global_score, blur_tensor, interpretation
+            return io.NodeOutput(global_score, blur_tensor, interpretation)
 
         except Exception as e:
             print(f"[BlurDetection] Error: {e}")
             fallback = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-            return 0.0, fallback, "Error during processing"
+            return io.NodeOutput(0.0, fallback, "Error during processing")

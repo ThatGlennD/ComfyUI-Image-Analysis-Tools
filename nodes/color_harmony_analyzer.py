@@ -2,34 +2,41 @@ import numpy as np
 import cv2
 import torch
 import matplotlib.pyplot as plt
-import tempfile
 import os
+import io as py_io
 from sklearn.cluster import KMeans
-import comfy.io as io
+from comfy_api.latest import io
 
 class ColorHarmonyAnalyzer(io.ComfyNode):
     @classmethod
-    def define_schema(cls):
-        return io.Schema({
-            "image": io.Image.Input(),
-            "num_clusters": io.Int.Input(default=3, min=2, max=8),
-            "visualize_harmony": io.Boolean.Input(default=True),
-        })
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="Color Harmony Analyzer",
+            display_name="Color Harmony Analyzer",
+            category="Image Analysis",
+            inputs=[
+                io.Image.Input("image"),
+                io.Int.Input("num_clusters", default=3, min=2, max=8),
+                io.Boolean.Input("visualize_harmony", default=True),
+            ],
+            outputs=[
+                io.Float.Output("harmony_score"),
+                io.String.Output("harmony_type"),
+                io.Image.Output("hue_wheel_visual"),
+            ]
+        )
 
-    RETURN_TYPES = ("FLOAT", "STRING", "IMAGE")
-    RETURN_NAMES = ("harmony_score", "harmony_type", "hue_wheel_visual")
-    FUNCTION = "execute"
-    CATEGORY = "Image Analysis"
-
-    def hue_distance(self, h1, h2):
+    @staticmethod
+    def hue_distance(h1, h2):
         return min(abs(h1 - h2), 180 - abs(h1 - h2))
 
-    def match_harmony(self, hues):
+    @staticmethod
+    def match_harmony(hues):
         if not hues or len(hues) < 2:
             return "Insufficient hues", 0.0
 
         scores = {}
-        diffs = [self.hue_distance(hues[i], hues[j]) for i in range(len(hues)) for j in range(i+1, len(hues))]
+        diffs = [ColorHarmonyAnalyzer.hue_distance(hues[i], hues[j]) for i in range(len(hues)) for j in range(i+1, len(hues))]
 
         if any(170 <= d <= 190 for d in diffs):
             scores["Complementary"] = 1.0
@@ -93,8 +100,8 @@ class ColorHarmonyAnalyzer(io.ComfyNode):
             if not dominant_hues:
                 return 0.0, "No dominant hues found", torch.zeros((1, 64, 64, 3), dtype=torch.float32)
 
-            # Use helper methods
-            harmony_type, score = cls().match_harmony(dominant_hues)
+            # Use static methods directly to avoid immutability issues with cls() instantiation
+            harmony_type, score = cls.match_harmony(dominant_hues)
 
             if visualize_harmony:
                 fig, ax = plt.subplots(figsize=(5, 5), subplot_kw={'projection': 'polar'})
@@ -108,19 +115,20 @@ class ColorHarmonyAnalyzer(io.ComfyNode):
                     ax.plot([hue], [1], marker='o', markersize=12, color=plt.cm.hsv(hue / (2 * np.pi)))
                 ax.set_title(harmony_type, fontsize=10)
 
-                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
-                    plt.savefig(tmpfile.name, dpi=150, bbox_inches="tight")
-                    plt.close(fig)
-                    vis = cv2.imread(tmpfile.name)
-                    vis_rgb = cv2.cvtColor(vis, cv2.COLOR_BGR2RGB)
-                    os.unlink(tmpfile.name)
+                buf = py_io.BytesIO()
+                plt.savefig(buf, format='png', dpi=150, bbox_inches="tight")
+                plt.close(fig)
+                buf.seek(0)
+                img_array = np.frombuffer(buf.getvalue(), dtype=np.uint8)
+                vis = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                vis_rgb = cv2.cvtColor(vis, cv2.COLOR_BGR2RGB)
                 vis_tensor = torch.from_numpy(vis_rgb.astype(np.float32) / 255.0).unsqueeze(0)
             else:
                 vis_tensor = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
 
-            return float(score), harmony_type, vis_tensor
+            return io.NodeOutput(float(score), harmony_type, vis_tensor)
 
         except Exception as e:
             print(f"[ColorHarmonyAnalyzer] Error: {e}")
             fallback = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-            return 0.0, "Error during processing", fallback
+            return io.NodeOutput(0.0, "Error during processing", fallback)

@@ -2,27 +2,31 @@ import numpy as np
 import cv2
 import torch
 import matplotlib.pyplot as plt
-import tempfile
 import os
-import comfy.io as io
+import io as py_io
+from comfy_api.latest import io
 
 class ColorCastDetector(io.ComfyNode):
     @classmethod
-    def define_schema(cls):
-        return io.Schema({
-            "image": io.Image.Input(),
-            "tolerance": io.Float.Input(default=0.05, min=0.01, max=0.5, step=0.01),
-            "visualize_color_bias": io.Boolean.Input(default=True),
-            "visualization_mode": io.Enum.Input(["Channel Difference", "Neutrality Deviation"])
-        })
-
-    RETURN_TYPES = ("FLOAT", "IMAGE", "STRING")
-    RETURN_NAMES = ("cast_score", "color_bias_map", "interpretation")
-    FUNCTION = "execute"
-    CATEGORY = "Image Analysis"
-
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="Color Cast Detector",
+            display_name="Color Cast Detector",
+            category="Image Analysis",
+            inputs=[
+                io.Image.Input("image"),
+                io.Float.Input("tolerance", default=0.05, min=0.01, max=0.5),
+                io.Boolean.Input("visualize_color_bias", default=True),
+                io.Enum.Input("visualization_mode", ["Channel Difference", "Neutrality Deviation"])
+            ],
+            outputs=[
+                io.Float.Output("cast_score"),
+                io.Image.Output("color_bias_map"),
+                io.String.Output("interpretation")
+            ]
+        )
     @classmethod
-    def execute(cls, image, tolerance, visualize_color_bias, visualization_mode):
+    def execute(cls, image, tolerance, visualize_color_bias, visualization_mode) -> io.NodeOutput:
         try:
             img_tensor = image[0]
             # Standard ComfyUI is [H, W, 3]
@@ -79,20 +83,21 @@ class ColorCastDetector(io.ComfyNode):
                 fig, ax = plt.subplots(figsize=(6, 6))
                 ax.imshow(diff_map)
                 ax.axis("off")
-                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
-                    plt.savefig(tmpfile.name, bbox_inches="tight", dpi=150)
-                    plt.close(fig)
-                    vis_img = cv2.imread(tmpfile.name)
-                    vis_rgb = cv2.cvtColor(vis_img, cv2.COLOR_BGR2RGB)
-                    os.unlink(tmpfile.name)
+                buf = py_io.BytesIO()
+                plt.savefig(buf, format='png', bbox_inches="tight", dpi=150)
+                plt.close(fig)
+                buf.seek(0)
+                img_array = np.frombuffer(buf.getvalue(), dtype=np.uint8)
+                vis_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                vis_rgb = cv2.cvtColor(vis_img, cv2.COLOR_BGR2RGB)
 
                 map_tensor = torch.from_numpy(vis_rgb.astype(np.float32) / 255.0).unsqueeze(0)
             else:
                 map_tensor = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
 
-            return cast_score, map_tensor, interpretation
+            return io.NodeOutput(cast_score, map_tensor, interpretation)
 
         except Exception as e:
             print(f"[ColorCastDetector] Error: {e}")
             fallback = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-            return 0.0, fallback, "Error during processing"
+            return io.NodeOutput(0.0, fallback, "Error during processing")

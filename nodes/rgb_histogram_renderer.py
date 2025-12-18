@@ -1,25 +1,27 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
-import io
+import io as python_io
 import torch
-import comfy.io as io_comfy # Rename to avoid conflict with io module
+from comfy_api.latest import io
 
-class RGBHistogramRenderer(io_comfy.ComfyNode):
+class RGBHistogramRenderer(io.ComfyNode):
     @classmethod
-    def define_schema(cls):
-        return io_comfy.Schema({
-            "image": io_comfy.Image.Input(),
-        })
-
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
-    FUNCTION = "execute"
-    OUTPUT_NODE = False
-    CATEGORY = "Image Analysis"
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="RGB Histogram Renderer",
+            display_name="RGB Histogram Renderer",
+            category="Image Analysis",
+            inputs=[
+                io.Image.Input("image"),
+            ],
+            outputs=[
+                io.Image.Output("image"),
+            ]
+        )
 
     @classmethod
-    def execute(cls, image):
+    def execute(cls, image) -> io.NodeOutput:
         try:
             # ComfyUI image batches are [B, H, W, C]
             img_tensor = image[0]
@@ -51,7 +53,7 @@ class RGBHistogramRenderer(io_comfy.ComfyNode):
             fig.tight_layout()
 
             # Save plot to buffer as RGB PNG
-            buf = io.BytesIO()
+            buf = python_io.BytesIO()
             fig.savefig(buf, format='png', dpi=100, transparent=False, facecolor='white')
             plt.close(fig)
             buf.seek(0)
@@ -61,9 +63,9 @@ class RGBHistogramRenderer(io_comfy.ComfyNode):
             img_np = np.array(pil_image).astype(np.float32) / 255.0
             img_tensor = torch.from_numpy(img_np).unsqueeze(0)  # (1, H, W, 3)
 
-            return (img_tensor,)
+            return io.NodeOutput(img_tensor)
 
         except Exception as e:
             print(f"[RGBHistogramInlineViewer] Error: {e}")
             fallback = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-            return (fallback,)
+            return io.NodeOutput(fallback)

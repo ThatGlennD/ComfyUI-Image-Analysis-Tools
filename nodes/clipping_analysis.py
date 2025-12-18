@@ -2,24 +2,29 @@ import numpy as np
 import cv2
 import torch
 import matplotlib.pyplot as plt
-import tempfile
 import os
-import comfy.io as io
+import io as py_io
+from comfy_api.latest import io
 
 class ClippingAnalysis(io.ComfyNode):
     @classmethod
-    def define_schema(cls):
-        return io.Schema({
-            "image": io.Image.Input(),
-            "mode": io.Enum.Input(["Highlight/Shadow Clipping", "Saturation Clipping"]),
-            "threshold": io.Int.Input(default=5, min=1, max=50, step=1),
-            "visualize_clipping_map": io.Boolean.Input(default=True)
-        })
-
-    RETURN_TYPES = ("FLOAT", "IMAGE", "STRING")
-    RETURN_NAMES = ("clipping_score", "clipping_map", "interpretation")
-    FUNCTION = "execute"
-    CATEGORY = "Image Analysis"
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="Clipping Analysis",
+            display_name="Clipping Analysis",
+            category="Image Analysis",
+            inputs=[
+                io.Image.Input("image"),
+                io.Enum.Input("mode", ["Highlight/Shadow Clipping", "Saturation Clipping"]),
+                io.Int.Input("threshold", default=5, min=1, max=50),
+                io.Boolean.Input("visualize_clipping_map", default=True)
+            ],
+            outputs=[
+                io.Float.Output("clipping_score"),
+                io.Image.Output("clipping_map"),
+                io.String.Output("interpretation")
+            ]
+        )
 
     @classmethod
     def execute(cls, image, mode, threshold, visualize_clipping_map):
@@ -63,20 +68,21 @@ class ClippingAnalysis(io.ComfyNode):
                 ax.imshow(mask)
                 ax.axis("off")
 
-                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
-                    plt.savefig(tmpfile.name, bbox_inches='tight', dpi=150)
-                    plt.close(fig)
-                    map_img = cv2.imread(tmpfile.name)
-                    map_rgb = cv2.cvtColor(map_img, cv2.COLOR_BGR2RGB)
-                    os.unlink(tmpfile.name)
+                buf = py_io.BytesIO()
+                plt.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+                plt.close(fig)
+                buf.seek(0)
+                img_array = np.frombuffer(buf.getvalue(), dtype=np.uint8)
+                map_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                map_rgb = cv2.cvtColor(map_img, cv2.COLOR_BGR2RGB)
 
                 map_tensor = torch.from_numpy(map_rgb.astype(np.float32) / 255.0).unsqueeze(0)
             else:
                 map_tensor = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
 
-            return float(score), map_tensor, description
+            return io.NodeOutput(float(score), map_tensor, description)
 
         except Exception as e:
             print(f"[ClippingAnalysis] Error: {e}")
             fallback = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-            return 0.0, fallback, "Error during processing"
+            return io.NodeOutput(0.0, fallback, "Error during processing")

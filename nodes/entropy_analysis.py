@@ -2,25 +2,31 @@ import numpy as np
 import cv2
 import torch
 import matplotlib.pyplot as plt
-import tempfile
 import os
-import comfy.io as io
+import io as py_io
+from comfy_api.latest import io
 
 class EntropyAnalysis(io.ComfyNode):
     @classmethod
-    def define_schema(cls):
-        return io.Schema({
-            "image": io.Image.Input(),
-            "block_size": io.Int.Input(default=32, min=8, max=128, step=8),
-            "visualize_entropy_map": io.Boolean.Input(default=True)
-        })
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="Entropy Analysis",
+            display_name="Entropy Analysis",
+            category="Image Analysis",
+            inputs=[
+                io.Image.Input("image"),
+                io.Int.Input("block_size", default=32, min=8, max=128),
+                io.Boolean.Input("visualize_entropy_map", default=True)
+            ],
+            outputs=[
+                io.Float.Output("entropy_score"),
+                io.Image.Output("entropy_map"),
+                io.String.Output("interpretation")
+            ]
+        )
 
-    RETURN_TYPES = ("FLOAT", "IMAGE", "STRING")
-    RETURN_NAMES = ("entropy_score", "entropy_map", "interpretation")
-    FUNCTION = "execute"
-    CATEGORY = "Image Analysis"
-
-    def compute_entropy(self, block):
+    @staticmethod
+    def compute_entropy(block):
         hist = cv2.calcHist([block], [0], None, [256], [0, 256])
         hist = hist.ravel()
         prob = hist / np.sum(hist)
@@ -28,7 +34,8 @@ class EntropyAnalysis(io.ComfyNode):
         entropy = -np.sum(prob * np.log2(prob))
         return entropy
 
-    def interpret_entropy(self, score):
+    @staticmethod
+    def interpret_entropy(score):
         if score < 2:
             return f"Very low entropy ({score:.2f} bits)"
         elif score < 4:
@@ -61,17 +68,17 @@ class EntropyAnalysis(io.ComfyNode):
             entropy_map = np.zeros((h_blocks, w_blocks), dtype=np.float32)
             entropies = []
 
-            instance = cls()
+            # Use static methods directly to avoid immutability issues with cls() instantiation
 
             for i in range(h_blocks):
                 for j in range(w_blocks):
                     block = gray[i*block_size:(i+1)*block_size, j*block_size:(j+1)*block_size]
-                    e = instance.compute_entropy(block)
+                    e = cls.compute_entropy(block)
                     entropy_map[i, j] = e
                     entropies.append(e)
 
             global_entropy = float(np.mean(entropies))
-            interpretation = instance.interpret_entropy(global_entropy)
+            interpretation = cls.interpret_entropy(global_entropy)
 
             if visualize_entropy_map:
                 vis_up = cv2.resize(entropy_map, (w, h), interpolation=cv2.INTER_NEAREST)
@@ -87,20 +94,21 @@ class EntropyAnalysis(io.ComfyNode):
                 cbar.ax.yaxis.set_label_position("left")
                 cbar.ax.yaxis.set_ticks_position("left")
 
-                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
-                    plt.savefig(tmpfile.name, bbox_inches='tight', dpi=150)
-                    plt.close(fig)
-                    legend_img = cv2.imread(tmpfile.name)
-                    legend_rgb = cv2.cvtColor(legend_img, cv2.COLOR_BGR2RGB)
-                    os.unlink(tmpfile.name)
+                buf = py_io.BytesIO()
+                plt.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+                plt.close(fig)
+                buf.seek(0)
+                img_array = np.frombuffer(buf.getvalue(), dtype=np.uint8)
+                legend_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                legend_rgb = cv2.cvtColor(legend_img, cv2.COLOR_BGR2RGB)
 
                 entropy_tensor = torch.from_numpy(legend_rgb.astype(np.float32) / 255.0).unsqueeze(0)
             else:
                 entropy_tensor = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
 
-            return global_entropy, entropy_tensor, interpretation
+            return io.NodeOutput(global_entropy, entropy_tensor, interpretation)
 
         except Exception as e:
             print(f"[EntropyAnalysis] Error: {e}")
             fallback = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-            return 0.0, fallback, "Error during processing"
+            return io.NodeOutput(0.0, fallback, "Error during processing")
