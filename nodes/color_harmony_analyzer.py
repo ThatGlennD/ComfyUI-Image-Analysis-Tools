@@ -1,35 +1,43 @@
 import numpy as np
 import cv2
 import torch
-import matplotlib.pyplot as plt
-import tempfile
-import os
+from matplotlib import pyplot as plt
 from sklearn.cluster import KMeans
-import comfy.io as io
+from comfy_api.latest import io
+
+from ._utils import fig_to_tensor, empty_image, to_rgb_uint8
+
 
 class ColorHarmonyAnalyzer(io.ComfyNode):
     @classmethod
-    def define_schema(cls):
-        return io.Schema({
-            "image": io.Image.Input(),
-            "num_clusters": io.Int.Input(default=3, min=2, max=8),
-            "visualize_harmony": io.Boolean.Input(default=True),
-        })
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="ColorHarmonyAnalyzer",
+            display_name="Color Harmony Analyzer",
+            category="Image Analysis",
+            inputs=[
+                io.Image.Input("image"),
+                io.Int.Input("num_clusters", default=3, min=2, max=8),
+                io.Boolean.Input("visualize_harmony", default=True),
+            ],
+            outputs=[
+                io.Float.Output("harmony_score"),
+                io.String.Output("harmony_type"),
+                io.Image.Output("hue_wheel_visual"),
+            ],
+        )
 
-    RETURN_TYPES = ("FLOAT", "STRING", "IMAGE")
-    RETURN_NAMES = ("harmony_score", "harmony_type", "hue_wheel_visual")
-    FUNCTION = "execute"
-    CATEGORY = "Image Analysis"
-
-    def hue_distance(self, h1, h2):
+    @staticmethod
+    def hue_distance(h1, h2):
         return min(abs(h1 - h2), 180 - abs(h1 - h2))
 
-    def match_harmony(self, hues):
+    @classmethod
+    def match_harmony(cls, hues):
         if not hues or len(hues) < 2:
             return "Insufficient hues", 0.0
 
         scores = {}
-        diffs = [self.hue_distance(hues[i], hues[j]) for i in range(len(hues)) for j in range(i+1, len(hues))]
+        diffs = [cls.hue_distance(hues[i], hues[j]) for i in range(len(hues)) for j in range(i + 1, len(hues))]
 
         if any(170 <= d <= 190 for d in diffs):
             scores["Complementary"] = 1.0
@@ -42,22 +50,21 @@ class ColorHarmonyAnalyzer(io.ComfyNode):
             sorted_hues = np.sort(hues)
             for i in range(len(sorted_hues)):
                 base = sorted_hues[i]
-                others = sorted_hues[:i].tolist() + sorted_hues[i+1:].tolist()
+                others = sorted_hues[:i].tolist() + sorted_hues[i + 1:].tolist()
                 split1 = (base + 150) % 180
                 split2 = (base + 210) % 180
-                split_hits = sum(min(abs(o - s), 180 - abs(o - s)) < 20 for o in others for s in [split1, split2])
+                split_hits = sum(cls.hue_distance(o, s) < 20 for o in others for s in [split1, split2])
                 if split_hits >= 2:
                     scores["Split-Complementary"] = 1.0
                     break
 
         if len(hues) >= 4:
             extended_hues = sorted(hues + [(hues[0] + 180) % 180])
-            distances = np.diff(extended_hues)
-            if len(distances) >= 4:
-                std_dev = np.std(distances)
-                if std_dev < 20:
-                    scores["Square"] = 1.0
-                elif all(40 <= d <= 70 for d in distances):
+            for i in range(len(extended_hues)):
+                base = extended_hues[i]
+                others = extended_hues[:i] + extended_hues[i + 1:]
+                target_diffs = [cls.hue_distance(base, o) for o in others]
+                if all(40 <= d <= 60 for d in target_diffs[:2]):
                     scores["Tetradic"] = 1.0
 
         if scores:
@@ -68,33 +75,20 @@ class ColorHarmonyAnalyzer(io.ComfyNode):
     @classmethod
     def execute(cls, image, num_clusters, visualize_harmony):
         try:
-            img_tensor = image[0]
-            # Standard ComfyUI is [H, W, 3]
-            np_img = img_tensor.cpu().numpy()
-
-            # If accidentally CHW (unlikely in standard pipeline but checking)
-            if np_img.shape[0] == 3 and np_img.shape[2] > 3:
-                 np_img = np_img.transpose(1, 2, 0)
-
-            uint8_img = (np.clip(np_img, 0, 1) * 255).astype(np.uint8)
-            if len(uint8_img.shape) == 2:
-                uint8_img = cv2.cvtColor(uint8_img, cv2.COLOR_GRAY2RGB)
-            elif len(uint8_img.shape) == 3 and uint8_img.shape[2] != 3:
-                uint8_img = cv2.cvtColor(uint8_img, cv2.COLOR_GRAY2RGB)
+            uint8_img = to_rgb_uint8(image)
 
             hsv_img = cv2.cvtColor(uint8_img, cv2.COLOR_RGB2HSV)
             h = hsv_img[:, :, 0].reshape(-1, 1)
             kmeans = KMeans(n_clusters=num_clusters, n_init="auto").fit(h)
 
             if len(kmeans.cluster_centers_) == 0:
-                return 0.0, "No dominant hues found", torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                return 0.0, "No dominant hues found", empty_image()
 
             dominant_hues = sorted([int(center[0]) for center in kmeans.cluster_centers_])
             if not dominant_hues:
-                return 0.0, "No dominant hues found", torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                return 0.0, "No dominant hues found", empty_image()
 
-            # Use helper methods
-            harmony_type, score = cls().match_harmony(dominant_hues)
+            harmony_type, score = cls.match_harmony(dominant_hues)
 
             if visualize_harmony:
                 fig, ax = plt.subplots(figsize=(5, 5), subplot_kw={'projection': 'polar'})
@@ -107,20 +101,12 @@ class ColorHarmonyAnalyzer(io.ComfyNode):
                 for hue in hue_angles:
                     ax.plot([hue], [1], marker='o', markersize=12, color=plt.cm.hsv(hue / (2 * np.pi)))
                 ax.set_title(harmony_type, fontsize=10)
-
-                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
-                    plt.savefig(tmpfile.name, dpi=150, bbox_inches="tight")
-                    plt.close(fig)
-                    vis = cv2.imread(tmpfile.name)
-                    vis_rgb = cv2.cvtColor(vis, cv2.COLOR_BGR2RGB)
-                    os.unlink(tmpfile.name)
-                vis_tensor = torch.from_numpy(vis_rgb.astype(np.float32) / 255.0).unsqueeze(0)
+                vis_tensor = fig_to_tensor(fig)
             else:
-                vis_tensor = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                vis_tensor = empty_image()
 
             return float(score), harmony_type, vis_tensor
 
         except Exception as e:
             print(f"[ColorHarmonyAnalyzer] Error: {e}")
-            fallback = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-            return 0.0, "Error during processing", fallback
+            return 0.0, "Error during processing", empty_image()

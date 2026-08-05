@@ -1,34 +1,41 @@
 import numpy as np
 import cv2
 import torch
-import matplotlib.pyplot as plt
-import tempfile
-import os
-import comfy.io as io
+from matplotlib import pyplot as plt
+from comfy_api.latest import io
+
+from ._utils import fig_to_tensor, empty_image
+
 
 class EntropyAnalysis(io.ComfyNode):
     @classmethod
-    def define_schema(cls):
-        return io.Schema({
-            "image": io.Image.Input(),
-            "block_size": io.Int.Input(default=32, min=8, max=128, step=8),
-            "visualize_entropy_map": io.Boolean.Input(default=True)
-        })
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="EntropyAnalysis",
+            display_name="Entropy Analysis",
+            category="Image Analysis",
+            inputs=[
+                io.Image.Input("image"),
+                io.Int.Input("block_size", default=32, min=8, max=128, step=8),
+                io.Boolean.Input("visualize_entropy_map", default=True),
+            ],
+            outputs=[
+                io.Float.Output("entropy_score"),
+                io.Image.Output("entropy_map"),
+                io.String.Output("interpretation"),
+            ],
+        )
 
-    RETURN_TYPES = ("FLOAT", "IMAGE", "STRING")
-    RETURN_NAMES = ("entropy_score", "entropy_map", "interpretation")
-    FUNCTION = "execute"
-    CATEGORY = "Image Analysis"
-
-    def compute_entropy(self, block):
+    @staticmethod
+    def compute_entropy(block):
         hist = cv2.calcHist([block], [0], None, [256], [0, 256])
         hist = hist.ravel()
         prob = hist / np.sum(hist)
         prob = prob[prob > 0]
-        entropy = -np.sum(prob * np.log2(prob))
-        return entropy
+        return float(-np.sum(prob * np.log2(prob)))
 
-    def interpret_entropy(self, score):
+    @staticmethod
+    def interpret_entropy(score):
         if score < 2:
             return f"Very low entropy ({score:.2f} bits)"
         elif score < 4:
@@ -37,21 +44,14 @@ class EntropyAnalysis(io.ComfyNode):
             return f"Moderate entropy ({score:.2f} bits)"
         elif score < 7.5:
             return f"High entropy ({score:.2f} bits)"
-        else:
-            return f"Very high entropy ({score:.2f} bits)"
+        return f"Very high entropy ({score:.2f} bits)"
 
     @classmethod
     def execute(cls, image, block_size, visualize_entropy_map):
         try:
-            img_tensor = image[0]
-            # Standard ComfyUI is [H, W, 3]
-            np_img = img_tensor.cpu().numpy()
-
-            # If accidentally CHW (unlikely in standard pipeline but checking)
-            if np_img.shape[0] == 3 and np_img.shape[2] > 3:
-                 np_img = np_img.transpose(1, 2, 0)
-
-            uint8_img = (np.clip(np_img, 0, 1) * 255).astype(np.uint8)
+            np_img = image[0].detach().cpu().numpy()
+            np_img = np.clip(np_img, 0.0, 1.0)
+            uint8_img = (np_img * 255.0).astype(np.uint8)
             gray = cv2.cvtColor(uint8_img, cv2.COLOR_RGB2GRAY)
 
             h, w = gray.shape
@@ -61,21 +61,18 @@ class EntropyAnalysis(io.ComfyNode):
             entropy_map = np.zeros((h_blocks, w_blocks), dtype=np.float32)
             entropies = []
 
-            instance = cls()
-
             for i in range(h_blocks):
                 for j in range(w_blocks):
-                    block = gray[i*block_size:(i+1)*block_size, j*block_size:(j+1)*block_size]
-                    e = instance.compute_entropy(block)
+                    block = gray[i * block_size:(i + 1) * block_size, j * block_size:(j + 1) * block_size]
+                    e = cls.compute_entropy(block)
                     entropy_map[i, j] = e
                     entropies.append(e)
 
-            global_entropy = float(np.mean(entropies))
-            interpretation = instance.interpret_entropy(global_entropy)
+            global_entropy = float(np.mean(entropies)) if entropies else 0.0
+            interpretation = cls.interpret_entropy(global_entropy)
 
             if visualize_entropy_map:
                 vis_up = cv2.resize(entropy_map, (w, h), interpolation=cv2.INTER_NEAREST)
-
                 fig, ax = plt.subplots(figsize=(6, 6))
                 im = ax.imshow(vis_up, cmap="inferno", vmin=0, vmax=8, aspect="equal")
                 ax.axis("off")
@@ -87,20 +84,12 @@ class EntropyAnalysis(io.ComfyNode):
                 cbar.ax.yaxis.set_label_position("left")
                 cbar.ax.yaxis.set_ticks_position("left")
 
-                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
-                    plt.savefig(tmpfile.name, bbox_inches='tight', dpi=150)
-                    plt.close(fig)
-                    legend_img = cv2.imread(tmpfile.name)
-                    legend_rgb = cv2.cvtColor(legend_img, cv2.COLOR_BGR2RGB)
-                    os.unlink(tmpfile.name)
-
-                entropy_tensor = torch.from_numpy(legend_rgb.astype(np.float32) / 255.0).unsqueeze(0)
+                entropy_tensor = fig_to_tensor(fig)
             else:
-                entropy_tensor = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
+                entropy_tensor = empty_image()
 
             return global_entropy, entropy_tensor, interpretation
 
         except Exception as e:
             print(f"[EntropyAnalysis] Error: {e}")
-            fallback = torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-            return 0.0, fallback, "Error during processing"
+            return 0.0, empty_image(), "Error during processing"

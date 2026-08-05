@@ -1,52 +1,46 @@
 import numpy as np
 import cv2
 import torch
-import comfy.io as io
+from comfy_api.latest import io
+
+from ._utils import to_rgb_uint8
+
 
 class DefocusAnalysis(io.ComfyNode):
     @classmethod
-    def define_schema(cls):
-        return io.Schema({
-            "image": io.Image.Input(),
-            "method": io.Enum.Input(["FFT Ratio (Sum)", "FFT Ratio (Mean)", "Hybrid (Mean+Sum)", "Edge Width"]),
-            "normalize": io.Boolean.Input(default=True),
-            "edge_detector": io.Enum.Input(["Sobel", "Canny"], default="Sobel", optional=True),
-        })
-
-    RETURN_TYPES = ("FLOAT", "STRING", "IMAGE", "IMAGE")
-    RETURN_NAMES = (
-        "defocus_score",
-        "interpretation",
-        "fft_heatmap",
-        "high_freq_mask"
-    )
-
-    FUNCTION = "execute"
-    CATEGORY = "Image Analysis"
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="DefocusAnalysis",
+            display_name="Defocus Analysis",
+            category="Image Analysis",
+            inputs=[
+                io.Image.Input("image"),
+                io.Combo.Input("method", options=["FFT Ratio (Sum)", "FFT Ratio (Mean)", "Hybrid (Mean+Sum)", "Edge Width"], default="FFT Ratio (Sum)"),
+                io.Boolean.Input("normalize", default=True),
+                io.Combo.Input("edge_detector", options=["Sobel", "Canny"], default="Sobel", optional=True),
+            ],
+            outputs=[
+                io.Float.Output("defocus_score"),
+                io.String.Output("interpretation"),
+                io.Image.Output("fft_heatmap"),
+                io.Image.Output("high_freq_mask"),
+            ],
+        )
 
     @classmethod
     def execute(cls, image, method, normalize=True, edge_detector="Sobel"):
-        image_np = image[0].cpu().numpy()
+        uint8_img = to_rgb_uint8(image)
+        gray = cv2.cvtColor(uint8_img, cv2.COLOR_RGB2GRAY)
 
-        # If accidentally CHW
-        if image_np.ndim == 3 and image_np.shape[0] == 3 and image_np.shape[2] > 3:
-             image_np = image_np.transpose(1, 2, 0)
-
-        image_np = (image_np * 255).astype(np.uint8)
-        if image_np.shape[2] == 4:
-            image_np = image_np[:, :, :3]
-
-        gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
+        instance = cls()
         score = 0.0
         fft_vis = np.zeros((64, 64, 3), dtype=np.uint8)
         mask_vis = np.zeros((64, 64, 3), dtype=np.uint8)
 
-        instance = cls()
-
         if "FFT" in method or method.startswith("Hybrid"):
             score, fft_vis, mask_vis = instance.fft_analysis(gray, method)
         elif method == "Edge Width":
-            score, fft_vis, mask_vis = instance.edge_width_analysis(gray, edge_detector)
+            score, fft_vis, mask_vis = instance.edge_width_analysis(gray, edge_detector or "Sobel")
 
         if normalize:
             score = max(0.0, min(score, 1.0))
@@ -56,7 +50,7 @@ class DefocusAnalysis(io.ComfyNode):
         fft_tensor = torch.from_numpy(cv2.cvtColor(fft_vis, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0).unsqueeze(0)
         mask_tensor = torch.from_numpy(mask_vis.astype(np.float32) / 255.0).unsqueeze(0)
 
-        return (score, interpretation, fft_tensor, mask_tensor)
+        return score, interpretation, fft_tensor, mask_tensor
 
     def fft_analysis(self, gray, method):
         f = np.fft.fft2(gray)
@@ -69,7 +63,7 @@ class DefocusAnalysis(io.ComfyNode):
         cx, cy = magnitude.shape[1] // 2, magnitude.shape[0] // 2
         y, x = np.ogrid[:gray.shape[0], :gray.shape[1]]
         radius = min(cx, cy) // 4
-        mask = (x - cx)**2 + (y - cy)**2 > radius**2
+        mask = (x - cx) ** 2 + (y - cy) ** 2 > radius ** 2
 
         hf_mag = magnitude * mask
         masked_norm = np.log1p(hf_mag)
@@ -93,7 +87,7 @@ class DefocusAnalysis(io.ComfyNode):
         return score, heatmap, mask_img
 
     def edge_width_analysis(self, gray, detector):
-        if detector not in ["Sobel", "Canny"]:
+        if detector not in ("Sobel", "Canny"):
             detector = "Sobel"
 
         if detector == "Sobel":
@@ -110,15 +104,10 @@ class DefocusAnalysis(io.ComfyNode):
         eroded = cv2.erode(thresholded, np.ones((3, 3)))
         thickness_map = dilated - eroded
 
-        mask_vis = cv2.merge([(thickness_map * 255).astype(np.uint8)]*3)
+        mask_vis = cv2.merge([(thickness_map * 255).astype(np.uint8)] * 3)
 
-        score = np.mean(thickness_map)
-
+        score = float(np.mean(thickness_map))
         return score, edge_vis_color, mask_vis
-
-    def laplacian_blur_score(self, gray):
-        lap_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-        return 1.0 - min(lap_var / 1000.0, 1.0)
 
     def interpret(self, score):
         if score < 0.2:
@@ -129,5 +118,4 @@ class DefocusAnalysis(io.ComfyNode):
             return f"Moderate defocus detected ({score:.2f})"
         elif score < 0.8:
             return f"Significant blur — check focus ({score:.2f})"
-        else:
-            return f"Severe defocus — image degraded ({score:.2f})"
+        return f"Severe defocus — image degraded ({score:.2f})"

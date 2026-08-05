@@ -24,7 +24,7 @@ Each node focuses on a specific dimension of image quality and returns interpret
 | Clipping Analysis           | Detects highlight/shadow clipping or over-saturation       | Clipping mask, score, clipping type            |
 | Edge Density Analysis       | Measures edge detail concentration via Canny or Sobel      | Edge score, edge map, heatmap                  |
 | Color Harmony Analyzer      | Checks palette harmony (complementary, triadic, etc.)      | Harmony type, score, color wheel visualization |
-| RGB Histogram Renderer      | Renders separate histograms for R, G, and B channels       | Histogram image                                |
+| Defocus Analysis            | Detects defocus via FFT high-frequency ratio or edge width    | Defocus score, interpretation, FFT heatmap, mask |
 
 ---
 
@@ -561,8 +561,7 @@ This creates a visual fingerprint of the image’s **tonal and chromatic structu
 
 - **Histogram Image**: A cleanly labeled plot showing:
   - Red, green, and blue channel curves or bars
-  - **Horizontal axis**: normalized intensity (`0.0` to `1.0`)
-  - **Vertical axis**: pixel count or relative frequency
+  - **Horizontal axis**: intensity bin (0–255, 256 bins)
 
 The image is output as a **standard tensor**, suitable for previewing or saving
 
@@ -645,8 +644,17 @@ Analyzes an image for signs of defocus or sharpness degradation using multiple f
 
 ---
 
+## Notes
+
+- **Batch handling**: All nodes analyze the **first frame** of a batched ComfyUI `IMAGE` tensor (`[B, H, W, C]`). Output images are single-frame (`[1, H, W, 3]`).
+- **Noise Estimation** uses the smoothing-residual method: a Gaussian blur is subtracted from the original and the local variance of that residual is the noise score.
+- **Visualizations** are rendered in-memory (no temp files are written to disk).
+
+---
+
 ## Installation
 To install the **ComfyUI Image Analysis Toolkit**, follow these steps:
+
 
 ### 1. Clone or Download
 

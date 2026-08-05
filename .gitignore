@@ -8,6 +8,7 @@ __pycache__/
 
 # MacOS system files
 .DS_Store
+._*
 
 # Windows system files
 Thumbs.db
@@ -32,8 +33,11 @@ venv/
 *.png
 *.svg
 
+# ComfyUI registry tracking artifacts
+.tracking
+
 # Editor swap and backup files
 *.swp
 *.swo
 *.sb-*
-*~ 
+*~
