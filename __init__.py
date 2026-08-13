@@ -12,34 +12,33 @@ from .nodes.color_temperature_estimator import ColorTemperatureEstimator
 from .nodes.defocus_analysis import DefocusAnalysis
 
 NODE_CLASS_MAPPINGS = {
-    "RGB Histogram Renderer": RGBHistogramRenderer,
-    "Sharpness / Focus Score": SharpnessFocusScore,
-    "Noise Estimation": NoiseEstimation,
-    "Contrast Analysis": ContrastAnalysis,
-    "Entropy Analysis": EntropyAnalysis,
-    "Blur Detection": BlurDetection,
-    "Edge Density Analysis": EdgeDensityAnalysis,
-    "Clipping Analysis": ClippingAnalysis,
-    "Color Cast Detector": ColorCastDetector,
-    "Color Harmony Analyzer": ColorHarmonyAnalyzer,
-    "Color Temperature Estimator": ColorTemperatureEstimator,
-    "Defocus Analysis": DefocusAnalysis
+    "RGBHistogramRenderer": RGBHistogramRenderer,
+    "SharpnessFocusScore": SharpnessFocusScore,
+    "NoiseEstimation": NoiseEstimation,
+    "ContrastAnalysis": ContrastAnalysis,
+    "EntropyAnalysis": EntropyAnalysis,
+    "BlurDetection": BlurDetection,
+    "EdgeDensityAnalysis": EdgeDensityAnalysis,
+    "ClippingAnalysis": ClippingAnalysis,
+    "ColorCastDetector": ColorCastDetector,
+    "ColorHarmonyAnalyzer": ColorHarmonyAnalyzer,
+    "ColorTemperatureEstimator": ColorTemperatureEstimator,
+    "DefocusAnalysis": DefocusAnalysis,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "RGB Histogram Renderer": "RGB Histogram Renderer",
-    "Sharpness / Focus Score": "Sharpness/Focus Score",
-    "Noise Estimation": "Noise Estimation",
-    "Contrast Analysis": "Contrast Analysis",
-    "Entropy Analysis": "Entropy Analysis",
-    "Blur Detection": "Blur Detection",
-    "Edge Density Analysis": "Edge Density Analysis",
-    "Clipping Analysis": "Clipping Analysis",
-    "Color Cast Detector": "Color Cast Detector",
-    "Color Harmony Analyzer": "Color Harmony Analyzer",
-    "Color Temperature Estimator": "Color Temperature Estimator",
-    "Defocus Analysis": "Defocus Analysis"
-
+    "RGBHistogramRenderer": "RGB Histogram Renderer",
+    "SharpnessFocusScore": "Sharpness/Focus Score",
+    "NoiseEstimation": "Noise Estimation",
+    "ContrastAnalysis": "Contrast Analysis",
+    "EntropyAnalysis": "Entropy Analysis",
+    "BlurDetection": "Blur Detection",
+    "EdgeDensityAnalysis": "Edge Density Analysis",
+    "ClippingAnalysis": "Clipping Analysis",
+    "ColorCastDetector": "Color Cast Detector",
+    "ColorHarmonyAnalyzer": "Color Harmony Analyzer",
+    "ColorTemperatureEstimator": "Color Temperature Estimator",
+    "DefocusAnalysis": "Defocus Analysis",
 }
 
 WEB_DIRECTORY = "./web/js"
