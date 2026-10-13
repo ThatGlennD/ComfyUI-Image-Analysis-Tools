@@ -15,4 +15,4 @@ The pinned composite action itself currently refers to nested actions by version
 tags and installs `comfy-cli` without a version pin; those transitive dependencies
 remain a residual supply-chain risk. This audit did not rotate the registry token.
 
-Changes are local and have not been pushed. No Actions run has occurred.
+The branch has been pushed to `origin`; no pull request has been opened.
